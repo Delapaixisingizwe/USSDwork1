@@ -25,7 +25,6 @@ connection.connect((err) => {
   console.log("✅ Connected to MySQL database.");
 });
 
-// ✅ Services and options
 const services = {
   en: ["Check balance", "Buy airtime", "Send money", "Withdraw money", "Deposit money", "Pay bills", "Buy data", "Loans", "Savings", "Customer support"],
   rw: ["Reba amafaranga ufite", "Gura airtime", "Ohereza amafaranga", "Kuramo amafaranga", "Shyiramo amafaranga", "Kwishyura fagitire", "Gura data", "Inguzanyo", "Kubitsa", "Serivisi z'abakiriya"]
@@ -128,7 +127,6 @@ function deductBalance(phone, amount, callback) {
   });
 }
 
-// ✅ USSD Endpoint with validation fix
 app.post("/ussd", (req, res) => {
   const { sessionId, phoneNumber, text } = req.body || {};
 
@@ -165,22 +163,40 @@ app.post("/ussd", (req, res) => {
       if (!["1", "2"].includes(lang)) return res.send("END Invalid language selection.");
 
       for (let i = 1; i < inputs.length; i++) {
-        if (inputs[i] === "n") page++;
-        if (inputs[i] === "0") page--;
+        if (inputs[i] === "n") {
+          page++;
+          inputs.splice(i, 1);
+          break;
+        }
+        if (inputs[i] === "0") {
+          if (inputs.length === 2) {
+            // Go back to service menu
+            response = getPaginatedServices(lang, page);
+            updateSession(sessionId, phoneNumber, text, lang, page);
+            return res.send(response);
+          } else {
+            page = Math.max(0, page - 1);
+            inputs.splice(i, 1);
+            break;
+          }
+        }
       }
-      if (page < 0) page = 0;
 
       const level = inputs.length;
 
       if (level === 1 || (level === 2 && ["n", "0"].includes(inputs[1]))) {
         response = getPaginatedServices(lang, page);
       } else if (level === 2) {
-        const selected = parseInt(inputs[1]);
-        const index = page * 5 + selected - 1;
-        if (isNaN(selected) || index >= serviceList.length) {
-          response = "END Invalid service selection.";
+        if (inputs[1] === "0") {
+          response = getPaginatedServices(lang, page);
         } else {
-          response = `CON ${subList[index].join("\n")}`;
+          const selected = parseInt(inputs[1]);
+          const index = page * 5 + selected - 1;
+          if (isNaN(selected) || index >= serviceList.length) {
+            response = "END Invalid service selection.";
+          } else {
+            response = `CON ${subList[index].join("\n")}`;
+          }
         }
       } else if (level === 3) {
         const serviceIndex = page * 5 + parseInt(inputs[1]) - 1;
@@ -259,13 +275,11 @@ app.post("/ussd", (req, res) => {
   });
 });
 
-// ✅ Global Express error middleware
 app.use((err, req, res, next) => {
   console.error("❌ Express Error Handler:", err.stack);
   res.status(500).send("END An unexpected error occurred.");
 });
 
-// ✅ Global error handlers
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
 });
@@ -280,7 +294,6 @@ process.on("SIGTERM", () => {
   });
 });
 
-// ✅ Start server
 app.listen(port, () => {
   console.log(`✅ USSD app running on port ${port}`);
 });
