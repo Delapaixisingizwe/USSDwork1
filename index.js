@@ -127,9 +127,14 @@ function deductBalance(phone, amount, callback) {
   });
 }
 
-// ✅ USSD Endpoint
+// ✅ USSD Endpoint with validation fix
 app.post("/ussd", (req, res) => {
-  const { sessionId, phoneNumber, text } = req.body;
+  const { sessionId, phoneNumber, text } = req.body || {};
+
+  if (!sessionId || !phoneNumber || typeof text === "undefined") {
+    return res.send("END Invalid request. Required fields are missing.");
+  }
+
   const inputs = text === "" ? [] : text.split("*");
   let response = "";
   let lang = "1", page = 0;
