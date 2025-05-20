@@ -24,7 +24,7 @@ connection.connect((err) => {
   console.log("✅ Connected to MySQL database.");
 });
 
-// Services and options
+// ✅ Services and options
 const services = {
   en: ["Check balance", "Buy airtime", "Send money", "Withdraw money", "Deposit money", "Pay bills", "Buy data", "Loans", "Savings", "Customer support"],
   rw: ["Reba amafaranga ufite", "Gura airtime", "Ohereza amafaranga", "Kuramo amafaranga", "Shyiramo amafaranga", "Kwishyura fagitire", "Gura data", "Inguzanyo", "Kubitsa", "Serivisi z'abakiriya"]
@@ -127,7 +127,7 @@ function deductBalance(phone, amount, callback) {
   });
 }
 
-// USSD Endpoint
+// ✅ USSD Endpoint
 app.post("/ussd", (req, res) => {
   const { sessionId, phoneNumber, text } = req.body;
   const inputs = text === "" ? [] : text.split("*");
@@ -253,11 +253,28 @@ app.post("/ussd", (req, res) => {
   });
 });
 
-// Error handler for unhandled exceptions
+// ✅ Global Express error middleware
+app.use((err, req, res, next) => {
+  console.error("❌ Express Error Handler:", err.stack);
+  res.status(500).send("END An unexpected error occurred.");
+});
+
+// ✅ Global error handlers
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
 });
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received. Closing app...");
+  connection.end(() => {
+    console.log("✅ MySQL connection closed.");
+    process.exit(0);
+  });
+});
 
+// ✅ Start server
 app.listen(port, () => {
   console.log(`✅ USSD app running on port ${port}`);
 });
