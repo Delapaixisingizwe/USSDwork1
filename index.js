@@ -1,36 +1,35 @@
 const express = require("express");
-const bodyParser = require("body-parser");
-const mysql = require("mysql");
+const mysql = require("mysql2");
+require("dotenv").config(); // ✅ Load environment variables
 
 const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
+const port = process.env.PORT || 3000;
+const SECRET_KEY = process.env.SECRET_KEY;
 
-// Database connection
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",
-  database: "ussd_app",
+
+app.use(express.json());
+
+// ✅ MySQL connection using .env variables
+const connection = mysql.createConnection({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT
 });
 
-db.connect((err) => {
+connection.connect((err) => {
   if (err) {
-    console.error("Database connection failed:", err);
+    console.error('Database connection error:', err);
     process.exit(1);
   }
-  console.log("Connected to MySQL database.");
+  console.log('Connected to the Clever Cloud MySQL database.');
 });
 
-// Define services and sub-options
+// Service definitions
 const services = {
-  en: [
-    "Check balance", "Buy airtime", "Send money", "Withdraw money", "Deposit money",
-    "Pay bills", "Buy data", "Loans", "Savings", "Customer support"
-  ],
-  rw: [
-    "Reba amafaranga ufite", "Gura airtime", "Ohereza amafaranga", "Kuramo amafaranga", "Shyiramo amafaranga",
-    "Kwishyura fagitire", "Gura data", "Inguzanyo", "Kubitsa", "Serivisi z'abakiriya"
-  ],
+  en: ["Check balance", "Buy airtime", "Send money", "Withdraw money", "Deposit money", "Pay bills", "Buy data", "Loans", "Savings", "Customer support"],
+  rw: ["Reba amafaranga ufite", "Gura airtime", "Ohereza amafaranga", "Kuramo amafaranga", "Shyiramo amafaranga", "Kwishyura fagitire", "Gura data", "Inguzanyo", "Kubitsa", "Serivisi z'abakiriya"],
 };
 
 const subOptions = {
@@ -60,7 +59,7 @@ const subOptions = {
   ],
 };
 
-// Helper function to show paginated services
+// Helper for paginated services
 function getPaginatedServices(lang, page) {
   const list = services[lang === "1" ? "en" : "rw"];
   const start = page * 5;
@@ -73,7 +72,7 @@ function getPaginatedServices(lang, page) {
   return response.trim();
 }
 
-// Save or update session
+// DB operations using correct connection object
 function updateSession(sessionId, phone, input, lang, page) {
   const sql = `
     INSERT INTO session (sessionID, phoneNumber, userInput, language, page)
@@ -84,46 +83,42 @@ function updateSession(sessionId, phone, input, lang, page) {
       language = VALUES(language),
       page = VALUES(page)
   `;
-  db.query(sql, [sessionId, phone, input, lang, page], (err) => {
+  connection.query(sql, [sessionId, phone, input, lang, page], (err) => {
     if (err) console.error("Session update error:", err);
   });
 }
 
-// Log transactions
 function insertTransaction(phone, service, subService, status) {
   const sql = `INSERT INTO Transactions (phoneNumber, service, subService, status) VALUES (?, ?, ?, ?)`;
-  db.query(sql, [phone, service, subService, status], (err) => {
+  connection.query(sql, [phone, service, subService, status], (err) => {
     if (err) console.error("Transaction insert error:", err);
   });
 }
 
-// Update or insert balance
 function updateBalance(phone, amount) {
   const sql = `
     INSERT INTO balance (phoneNumber, amount)
     VALUES (?, ?)
     ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount)
   `;
-  db.query(sql, [phone, amount], (err) => {
+  connection.query(sql, [phone, amount], (err) => {
     if (err) console.error("Balance update error:", err);
   });
 }
 
-// Fetch balance
 function getBalance(phone, callback) {
-  db.query("SELECT amount FROM balance WHERE phoneNumber = ?", [phone], (err, results) => {
+  connection.query("SELECT amount FROM balance WHERE phoneNumber = ?", [phone], (err, results) => {
     if (err) return callback(err, null);
     if (results.length > 0) return callback(null, results[0].amount);
     return callback(null, 0);
   });
 }
 
-// Deduct balance
 function deductBalance(phone, amount, callback) {
   getBalance(phone, (err, currentBalance) => {
     if (err) return callback(err);
     if (currentBalance >= amount) {
-      db.query("UPDATE balance SET amount = amount - ? WHERE phoneNumber = ?", [amount, phone], (err) => {
+      connection.query("UPDATE balance SET amount = amount - ? WHERE phoneNumber = ?", [amount, phone], (err) => {
         if (err) return callback(err);
         return callback(null, true);
       });
@@ -140,12 +135,12 @@ app.post("/ussd", (req, res) => {
   let response = "";
   let lang = "1", page = 0;
 
-  db.query("SELECT * FROM session WHERE sessionID = ?", [sessionId], (err, results) => {
+  connection.query("SELECT * FROM session WHERE sessionID = ?", [sessionId], (err, results) => {
     if (err) {
       console.error("Error querying session table:", err);
       return res.send("END Internal server error.");
     }
-  
+
     if (results.length > 0) {
       lang = results[0].language;
       page = results[0].page;
@@ -254,12 +249,11 @@ app.post("/ussd", (req, res) => {
     res.send(response);
   });
 });
+
 process.on("uncaughtException", err => {
   console.error("Uncaught Exception:", err);
 });
 
-
-// Start server
-app.listen(3000, () => {
-  console.log("USSD app running on port 3000");
+app.listen(port, () => {
+  console.log(`USSD app running on port ${port}`);
 });
