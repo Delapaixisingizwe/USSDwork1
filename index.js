@@ -1,15 +1,13 @@
 const express = require("express");
 const mysql = require("mysql2");
-require("dotenv").config(); // ✅ Load environment variables
+require("dotenv").config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const SECRET_KEY = process.env.SECRET_KEY;
-
 
 app.use(express.json());
 
-// ✅ MySQL connection using .env variables
+// ✅ MySQL connection
 const connection = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -20,16 +18,16 @@ const connection = mysql.createConnection({
 
 connection.connect((err) => {
   if (err) {
-    console.error('Database connection error:', err);
+    console.error("❌ Database connection error:", err);
     process.exit(1);
   }
-  console.log('Connected to the Clever Cloud MySQL database.');
+  console.log("✅ Connected to MySQL database.");
 });
 
-// Service definitions
+// Services and options
 const services = {
   en: ["Check balance", "Buy airtime", "Send money", "Withdraw money", "Deposit money", "Pay bills", "Buy data", "Loans", "Savings", "Customer support"],
-  rw: ["Reba amafaranga ufite", "Gura airtime", "Ohereza amafaranga", "Kuramo amafaranga", "Shyiramo amafaranga", "Kwishyura fagitire", "Gura data", "Inguzanyo", "Kubitsa", "Serivisi z'abakiriya"],
+  rw: ["Reba amafaranga ufite", "Gura airtime", "Ohereza amafaranga", "Kuramo amafaranga", "Shyiramo amafaranga", "Kwishyura fagitire", "Gura data", "Inguzanyo", "Kubitsa", "Serivisi z'abakiriya"]
 };
 
 const subOptions = {
@@ -43,7 +41,7 @@ const subOptions = {
     ["1. Buy daily data", "2. Buy weekly data", "0. Back"],
     ["1. Loan application", "2. Loan balance", "0. Back"],
     ["1. Save money", "2. Withdraw savings", "0. Back"],
-    ["1. Call support", "2. FAQ", "0. Back"],
+    ["1. Call support", "2. FAQ", "0. Back"]
   ],
   rw: [
     ["1. Reba amafaranga", "2. Amateka y'ibikorwa", "0. Subira inyuma"],
@@ -55,11 +53,10 @@ const subOptions = {
     ["1. Gura data y'umunsi", "2. Gura data y'icyumweru", "0. Subira inyuma"],
     ["1. Gusaba inguzanyo", "2. Amakuru ku nguzanyo", "0. Subira inyuma"],
     ["1. Kubika amafaranga", "2. Gukuramo amafaranga", "0. Subira inyuma"],
-    ["1. Hamagara serivisi", "2. Ibibazo bisanzwe", "0. Subira inyuma"],
-  ],
+    ["1. Hamagara serivisi", "2. Ibibazo bisanzwe", "0. Subira inyuma"]
+  ]
 };
 
-// Helper for paginated services
 function getPaginatedServices(lang, page) {
   const list = services[lang === "1" ? "en" : "rw"];
   const start = page * 5;
@@ -72,7 +69,6 @@ function getPaginatedServices(lang, page) {
   return response.trim();
 }
 
-// DB operations using correct connection object
 function updateSession(sessionId, phone, input, lang, page) {
   const sql = `
     INSERT INTO session (sessionID, phoneNumber, userInput, language, page)
@@ -108,7 +104,10 @@ function updateBalance(phone, amount) {
 
 function getBalance(phone, callback) {
   connection.query("SELECT amount FROM balance WHERE phoneNumber = ?", [phone], (err, results) => {
-    if (err) return callback(err, null);
+    if (err) {
+      console.error("Balance query error:", err);
+      return callback(err, null);
+    }
     if (results.length > 0) return callback(null, results[0].amount);
     return callback(null, 0);
   });
@@ -128,7 +127,7 @@ function deductBalance(phone, amount, callback) {
   });
 }
 
-// USSD logic
+// USSD Endpoint
 app.post("/ussd", (req, res) => {
   const { sessionId, phoneNumber, text } = req.body;
   const inputs = text === "" ? [] : text.split("*");
@@ -137,8 +136,8 @@ app.post("/ussd", (req, res) => {
 
   connection.query("SELECT * FROM session WHERE sessionID = ?", [sessionId], (err, results) => {
     if (err) {
-      console.error("Error querying session table:", err);
-      return res.send("END Internal server error.");
+      console.error("Session DB query error:", err);
+      return res.send("END Sorry, system error.");
     }
 
     if (results.length > 0) {
@@ -149,111 +148,116 @@ app.post("/ussd", (req, res) => {
     const serviceList = services[lang === "1" ? "en" : "rw"];
     const subList = subOptions[lang === "1" ? "en" : "rw"];
 
-    if (inputs.length === 0) {
-      response = `CON Welcome to My USSD App\n1. English\n2. Ikinyarwanda`;
-      updateSession(sessionId, phoneNumber, "", lang, page);
-      return res.send(response);
-    }
-
-    lang = inputs[0];
-    if (!["1", "2"].includes(lang)) return res.send("END Invalid language selection.");
-
-    for (let i = 1; i < inputs.length; i++) {
-      if (inputs[i] === "n") page++;
-      if (inputs[i] === "0") page--;
-    }
-    if (page < 0) page = 0;
-
-    const level = inputs.length;
-
-    if (level === 1 || (level === 2 && ["n", "0"].includes(inputs[1]))) {
-      response = getPaginatedServices(lang, page);
-    } else if (level === 2) {
-      const selected = parseInt(inputs[1]);
-      const index = page * 5 + selected - 1;
-      if (isNaN(selected) || index >= serviceList.length) {
-        response = "END Invalid service selection.";
-      } else {
-        response = `CON ${subList[index].join("\n")}`;
+    try {
+      if (inputs.length === 0) {
+        response = `CON Welcome to My USSD App\n1. English\n2. Ikinyarwanda`;
+        updateSession(sessionId, phoneNumber, "", lang, page);
+        return res.send(response);
       }
-    } else if (level === 3) {
-      const serviceIndex = page * 5 + parseInt(inputs[1]) - 1;
-      const subIndex = parseInt(inputs[2]) - 1;
-      const service = serviceList[serviceIndex];
-      const sub = subList[serviceIndex][subIndex];
 
-      const isDeposit = service.toLowerCase().includes("deposit") || sub.toLowerCase().includes("kubitsa");
-      const isBuyAirtime = service.toLowerCase().includes("airtime");
-      const isSendMoney = service.toLowerCase().includes("send money") || sub.toLowerCase().includes("ohereza");
+      lang = inputs[0];
+      if (!["1", "2"].includes(lang)) return res.send("END Invalid language selection.");
 
-      if (isDeposit || isBuyAirtime || isSendMoney) {
-        response = lang === "1" ? "CON Enter amount:" : "CON Andika amafaranga:";
-      } else if (service.toLowerCase().includes("balance")) {
-        getBalance(phoneNumber, (err, balance) => {
+      for (let i = 1; i < inputs.length; i++) {
+        if (inputs[i] === "n") page++;
+        if (inputs[i] === "0") page--;
+      }
+      if (page < 0) page = 0;
+
+      const level = inputs.length;
+
+      if (level === 1 || (level === 2 && ["n", "0"].includes(inputs[1]))) {
+        response = getPaginatedServices(lang, page);
+      } else if (level === 2) {
+        const selected = parseInt(inputs[1]);
+        const index = page * 5 + selected - 1;
+        if (isNaN(selected) || index >= serviceList.length) {
+          response = "END Invalid service selection.";
+        } else {
+          response = `CON ${subList[index].join("\n")}`;
+        }
+      } else if (level === 3) {
+        const serviceIndex = page * 5 + parseInt(inputs[1]) - 1;
+        const subIndex = parseInt(inputs[2]) - 1;
+        const service = serviceList[serviceIndex];
+        const sub = subList[serviceIndex][subIndex];
+
+        const isDeposit = service.toLowerCase().includes("deposit") || sub.toLowerCase().includes("kubitsa");
+        const isBuyAirtime = service.toLowerCase().includes("airtime");
+        const isSendMoney = service.toLowerCase().includes("send money") || sub.toLowerCase().includes("ohereza");
+
+        if (isDeposit || isBuyAirtime || isSendMoney) {
+          response = lang === "1" ? "CON Enter amount:" : "CON Andika amafaranga:";
+        } else if (service.toLowerCase().includes("balance")) {
+          getBalance(phoneNumber, (err, balance) => {
+            if (err) return res.send("END Unable to fetch balance.");
+            const msg = lang === "1"
+              ? `END Your balance is: ${balance}`
+              : `END Ufite amafaranga: ${balance}`;
+            return res.send(msg);
+          });
+          return;
+        } else {
+          insertTransaction(phoneNumber, service, sub, "Processed");
+          response = lang === "1" ? "END Service processed." : "END Serivisi irakozwe.";
+        }
+      } else if (level === 4) {
+        const serviceIndex = page * 5 + parseInt(inputs[1]) - 1;
+        const subIndex = parseInt(inputs[2]) - 1;
+        const amount = parseFloat(inputs[3]);
+
+        const service = serviceList[serviceIndex];
+        const sub = subList[serviceIndex][subIndex];
+
+        const isDeposit = service.toLowerCase().includes("deposit") || sub.toLowerCase().includes("kubitsa");
+        const isBuyAirtime = service.toLowerCase().includes("airtime");
+        const isSendMoney = service.toLowerCase().includes("send money") || sub.toLowerCase().includes("ohereza");
+
+        if (isNaN(amount) || amount <= 0) {
+          response = lang === "1" ? "END Invalid amount." : "END Amafaranga winjije siyo.";
+        } else if (isDeposit) {
+          updateBalance(phoneNumber, amount);
+          insertTransaction(phoneNumber, service, `${sub} - Amount: ${amount}`, "Success");
           response = lang === "1"
-            ? `END Your balance is: ${balance}`
-            : `END Ufite amafaranga: ${balance}`;
-          res.set("Content-Type", "text/plain");
-          res.send(response);
-        });
-        return;
-      } else {
-        insertTransaction(phoneNumber, service, sub, "Processed");
-        response = lang === "1" ? "END Service processed." : "END Serivisi irakozwe.";
-      }
-    } else if (level === 4) {
-      const serviceIndex = page * 5 + parseInt(inputs[1]) - 1;
-      const subIndex = parseInt(inputs[2]) - 1;
-      const amount = parseFloat(inputs[3]);
-
-      const service = serviceList[serviceIndex];
-      const sub = subList[serviceIndex][subIndex];
-
-      const isDeposit = service.toLowerCase().includes("deposit") || sub.toLowerCase().includes("kubitsa");
-      const isBuyAirtime = service.toLowerCase().includes("airtime");
-      const isSendMoney = service.toLowerCase().includes("send money") || sub.toLowerCase().includes("ohereza");
-
-      if (isNaN(amount) || amount <= 0) {
-        response = lang === "1" ? "END Invalid amount." : "END Amafaranga winjije siyo.";
-      } else if (isDeposit) {
-        updateBalance(phoneNumber, amount);
-        insertTransaction(phoneNumber, service, `${sub} - Amount: ${amount}`, "Success");
-        response = lang === "1"
-          ? `END Deposit of ${amount} successful.`
-          : `END Kubitsa amafaranga ${amount} byagenze neza.`;
-      } else if (isBuyAirtime || isSendMoney) {
-        deductBalance(phoneNumber, amount, (err, success) => {
-          if (err || !success) {
-            response = lang === "1"
-              ? "END Insufficient balance."
-              : "END Nta mafaranga ahagije.";
-          } else {
-            insertTransaction(phoneNumber, service, `${sub} - Amount: ${amount}`, "Success");
-            response = lang === "1"
-              ? `END ${service} of ${amount} completed.`
-              : `END ${service} ya ${amount} yarangije.`;
-          }
-          res.set("Content-Type", "text/plain");
-          res.send(response);
-        });
-        return;
+            ? `END Deposit of ${amount} successful.`
+            : `END Kubitsa amafaranga ${amount} byagenze neza.`;
+        } else if (isBuyAirtime || isSendMoney) {
+          deductBalance(phoneNumber, amount, (err, success) => {
+            if (err || !success) {
+              response = lang === "1"
+                ? "END Insufficient balance."
+                : "END Nta mafaranga ahagije.";
+            } else {
+              insertTransaction(phoneNumber, service, `${sub} - Amount: ${amount}`, "Success");
+              response = lang === "1"
+                ? `END ${service} of ${amount} completed.`
+                : `END ${service} ya ${amount} yarangije.`;
+            }
+            return res.send(response);
+          });
+          return;
+        } else {
+          response = "END Invalid request.";
+        }
       } else {
         response = "END Invalid request.";
       }
-    } else {
-      response = "END Invalid request.";
-    }
 
-    updateSession(sessionId, phoneNumber, text, lang, page);
-    res.set("Content-Type", "text/plain");
-    res.send(response);
+      updateSession(sessionId, phoneNumber, text, lang, page);
+      res.send(response);
+
+    } catch (err) {
+      console.error("❌ Fatal error in USSD flow:", err);
+      res.send("END Sorry, something went wrong.");
+    }
   });
 });
 
-process.on("uncaughtException", err => {
+// Error handler for unhandled exceptions
+process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
 });
 
 app.listen(port, () => {
-  console.log(`USSD app running on port ${port}`);
+  console.log(`✅ USSD app running on port ${port}`);
 });
